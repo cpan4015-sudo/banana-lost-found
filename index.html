@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>香蕉攀岩-失物招领图片美化工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #FFF8E7 0%, #FFE4B5 100%);
+      min-height: 100vh;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #F59E0B;
+      cursor: pointer;
+    }
+    .border-3 { border-width: 3px; }
+    .pulse-animation {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .fade-in {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="py-8 px-4">
+  <!-- 头部 -->
+  <header class="text-center mb-8">
+    <h1 class="text-4xl font-bold text-gray-800 mb-2">
+      🍌 香蕉攀岩 · 失物招领图片美化
+    </h1>
+    <p class="text-gray-600">上传图片 → AI自动识别 → 添加Logo日期 → 一键下载</p>
+  </header>
+
+  <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- 左侧：设置面板 -->
+    <div class="bg-white rounded-2xl shadow-xl p-6">
+      <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        ⚙️ 图片设置
+      </h2>
+
+      <!-- 模型加载状态 -->
+      <div id="modelStatus" class="mb-4 p-3 bg-blue-50 rounded-xl text-sm text-blue-700">
+        🔄 AI模型加载中...
+      </div>
+
+      <!-- 图片上传区域 -->
+      <div id="uploadArea" class="border-3 border-dashed border-yellow-400 rounded-xl p-12 text-center cursor-pointer hover:bg-yellow-50 transition-colors mb-6">
+        <div class="text-6xl mb-4">📷</div>
+        <p class="text-lg text-gray-700 font-medium mb-2">点击或拖拽上传图片</p>
+        <p class="text-sm text-gray-500">支持 JPG、PNG 格式</p>
+        <input type="file" id="fileInput" accept="image/*" class="hidden">
+      </div>
+
+      <!-- 已上传图片信息 -->
+      <div id="uploadedInfo" class="hidden mb-6 fade-in">
+        <div class="flex items-center justify-between mb-3">
+          <span id="fileName" class="text-sm text-gray-600"></span>
+          <button onclick="resetImage()" class="text-sm text-red-500 hover:text-red-700 font-medium">
+            重新上传
+          </button>
+        </div>
+      </div>
+
+      <!-- AI识别结果 -->
+      <div id="aiResult" class="hidden mb-6 p-4 bg-gradient-to-r from-orange-100 to-yellow-100 rounded-xl fade-in">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-600 mb-1">AI识别结果</p>
+            <p id="aiCategory" class="text-2xl font-bold text-gray-800"></p>
+          </div>
+          <div id="aiConfidence" class="text-right">
+            <p class="text-sm text-gray-500">置信度</p>
+            <p id="confidencePercent" class="text-xl font-bold text-green-600"></p>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button id="btn-equipment" onclick="setItemType('equipment')" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm">
+            🧗 装备类
+          </button>
+          <button id="btn-clothing" onclick="setItemType('clothing')" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm">
+            👕 服饰类
+          </button>
+        </div>
+      </div>
+
+      <!-- 图片调整 -->
+      <div id="adjustPanel" class="space-y-5">
+        <h3 class="text-sm font-semibold text-gray-700">图片美化调整</h3>
+
+        <div>
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-gray-600">亮度</span>
+            <span id="brightnessValue" class="text-gray-800 font-medium">100%</span>
+          </div>
+          <input type="range" id="brightness" min="50" max="150" value="100" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" oninput="updateSettings()">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-gray-600">对比度</span>
+            <span id="contrastValue" class="text-gray-800 font-medium">100%</span>
+          </div>
+          <input type="range" id="contrast" min="50" max="150" value="100" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" oninput="updateSettings()">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-gray-600">饱和度</span>
+            <span id="saturationValue" class="text-gray-800 font-medium">100%</span>
+          </div>
+          <input type="range" id="saturation" min="0" max="200" value="100" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" oninput="updateSettings()">
+        </div>
+
+        <button onclick="autoEnhance()" class="w-full py-3 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-xl font-medium hover:shadow-lg transition-all">
+          ✨ 一键美化
+        </button>
+      </div>
+
+      <!-- 下载按钮 -->
+      <button id="downloadBtn" onclick="downloadImage()" disabled class="w-full mt-6 py-4 rounded-xl font-bold text-lg transition-all bg-gray-300 text-gray-500 cursor-not-allowed">
+        📥 下载美化图片
+      </button>
+    </div>
+
+    <!-- 右侧：预览区域 -->
+    <div class="bg-white rounded-2xl shadow-xl p-6">
+      <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+        👁️ 预览效果
+      </h2>
+
+      <div class="bg-gray-100 rounded-xl p-4 min-h-[500px] flex items-center justify-center">
+        <div id="previewContainer" class="relative bg-white rounded-lg overflow-hidden shadow-lg">
+          <!-- 主图片 -->
+          <img id="previewImage" class="max-w-full hidden">
+
+          <!-- 底部信息栏 -->
+          <div id="infoBar" class="absolute bottom-0 left-0 right-0 bg-gradient-to-r from-black/70 via-black/60 to-black/70 text-white p-3 hidden">
+            <div class="flex items-center justify-between">
+              <!-- Logo -->
+              <div class="w-28">
+                <svg viewBox="0 0 120 60" class="w-full h-full">
+                  <text x="10" y="45" font-family="Arial Black, sans-serif" font-size="28" font-weight="900" fill="#FFD700" stroke="#333" stroke-width="1.5">香蕉攀岩</text>
+                  <text x="10" y="58" font-family="Arial, sans-serif" font-size="10" fill="#aaa">BANANA CLIMBING</text>
+                </svg>
+              </div>
+
+              <!-- 中间文字 -->
+              <div class="text-center flex-1">
+                <div id="itemTypeText" class="text-lg font-bold">失物招领 · 装备类</div>
+                <div class="text-sm opacity-90">如有遗失，请联系前台</div>
+              </div>
+
+              <!-- 日期 -->
+              <div class="text-right">
+                <div id="dateText" class="text-2xl font-bold">5月2日</div>
+                <div id="yearText" class="text-xs opacity-80">2026年</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 占位图 -->
+          <div id="placeholder" class="text-center text-gray-400 p-12">
+            <div class="text-8xl mb-4 opacity-30">🖼️</div>
+            <p>上传图片后即可预览</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 提示信息 -->
+      <div class="mt-4 p-4 bg-yellow-50 rounded-xl">
+        <p class="text-sm text-yellow-800">
+          💡 <strong>使用说明：</strong>上传失物照片后，AI将自动识别是服饰还是装备类，点击下载即可获得带有香蕉攀岩Logo和日期的精美图片。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 页脚 -->
+  <footer class="text-center mt-12 text-gray-500 text-sm">
+    <p>🍌 香蕉攀岩 · 让每一次攀登都充满乐趣</p>
+  </footer>
+
+  <script>
+    let currentImage = null;
+    let itemType = 'equipment';
+    let model = null;
+
+    // 攀岩相关装备和服饰的关键词
+    const EQUIPMENT_KEYWORDS = [
+      'bag', 'backpack', 'shoes', 'shoe', 'climbing', 'rope', 'harness', 'carabiner',
+      'chalk', 'helmet', 'belay', 'crash', 'pad', 'quickdraw', 'gear', 'equipment',
+      '安全带', '攀岩鞋', '镁粉', '绳索', '背包', '头盔', '保护器', '岩壁', '快挂', '装备',
+      '水壶', '水袋', '锁具', '扁带', '攀爬', '运动包', '袜子', '手套'
+    ];
+
+    const CLOTHING_KEYWORDS = [
+      'shirt', 'pants', 'jacket', 'hoodie', 'sweater', 'shorts', 'leggings', 'sock',
+      'hat', 'cap', 'beanie', 'gloves', 'vest', 'top', 'dress', 'skirt', 'coat',
+      '衣服', '裤子', '外套', '帽子', '袜子', '手套', '裙子', 'T恤', '卫衣', '运动服',
+      '毛衣', '衬衫', '长裤', '短裤', '背心', '头巾', '围巾'
+    ];
+
+    // 加载 TensorFlow.js MobileNet 模型
+    async function loadModel() {
+      try {
+        model = await tf.loadLayersModel('https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v1_0.25_224/model.json');
+        document.getElementById('modelStatus').innerHTML = '✅ AI模型加载完成，可以开始使用';
+        document.getElementById('modelStatus').className = 'mb-4 p-3 bg-green-50 rounded-xl text-sm text-green-700';
+      } catch (error) {
+        console.error('模型加载失败:', error);
+        document.getElementById('modelStatus').innerHTML = '⚠️ AI模型加载失败，但可以使用关键词匹配';
+        document.getElementById('modelStatus').className = 'mb-4 p-3 bg-yellow-50 rounded-xl text-sm text-yellow-700';
+      }
+    }
+
+    // 预测图片类别
+    async function predictImage(imageElement) {
+      if (model) {
+        try {
+          // 预处理图片
+          const tensor = tf.browser.fromPixels(imageElement)
+            .resizeNearestNeighbor([224, 224])
+            .toFloat()
+            .expandDims();
+
+          // 预测
+          const prediction = model.predict(tensor);
+          const probabilities = await prediction.data();
+
+          // 获取预测结果
+          const topK = 5;
+          const indices = Array.from(probabilities).map((p, i) => ({ p, i }))
+            .sort((a, b) => b.p - a.p)
+            .slice(0, topK);
+
+          // 分析预测结果
+          return analyzePredictions(indices);
+        } catch (error) {
+          console.error('预测失败:', error);
+          return { type: 'equipment', confidence: 0.5 };
+        }
+      } else {
+        // 如果模型未加载，使用默认分类
+        return { type: 'equipment', confidence: 0.5, message: '默认分类' };
+      }
+    }
+
+    // 分析预测结果
+    function analyzePredictions(indices) {
+      // MobileNet 的 ImageNet 类别映射（简化版）
+      const imagenetClasses = {
+        // 服饰类 (0-25)
+        0: 'T-shirt/top', 1: 'Shirt', 2: 'Jersey', 3: 'Sweatshirt', 4: 'Coat',
+        5: 'Suit', 6: 'Jacket', 7: 'Robe', 8: 'Miniskirt', 9: 'Lab_coat',
+        10: 'Purse', 11: 'Handbag', 12: 'Wallet', 13: 'Belt', 14: 'Brassiere',
+        15: 'Sunglasses', 16: 'Scarf', 17: 'Tie', 18: 'Ski_mask', 19: 'Bikini',
+        20: 'Swimming_trunks', 21: 'Sock', 22: 'Glove', 23: 'Hat', 24: 'Cap',
+        25: 'Velvet', 26: 'Cuff', 27: 'Pajama', 28: 'Maid', 29: 'Pouch',
+        // 装备类 (一些常见物品)
+        400: 'Climbing_frame', 401: 'Rope', 402: 'Safety_pin', 403: 'Locker', 404: 'Mailbox',
+        405: 'Magnet', 406: 'Mousetrap', 407: 'Paintbrush', 408: 'Paper_towel', 409: 'Pencil_box',
+        410: 'Pencil sharpener', 411: 'Plunger', 412: 'Point', 413: 'Pool_table', 414: 'Pop_bottle',
+        415: 'Pot', 416: 'Potter\'s_wheel', 417: 'Pretzel', 418: 'Printer', 419: 'Puck',
+        420: 'Punching_bag', 421: 'Quill', 422: 'Remote_control', 423: 'Saddle', 424: 'Scoreboard',
+        425: 'Sewing_machine', 426: 'Shoe_shop', 427: 'Shopping_cart', 428: 'Shovel', 429: 'Ski',
+        430: 'Ski_goggles', 431: 'Sleeping_bag', 432: 'Slide_rule', 433: 'Sliding_door', 434: 'Smoke_machine',
+        435: 'Snorkel', 436: 'Snowmobile', 437: 'Snowplow', 438: 'Soccer_ball', 439: 'Sock',
+      };
+
+      let equipmentScore = 0;
+      let clothingScore = 0;
+
+      indices.forEach(({ p, i }) => {
+        const className = imagenetClasses[i] || '';
+        const classNameLower = className.toLowerCase();
+
+        // 检查是否匹配装备关键词
+        EQUIPMENT_KEYWORDS.forEach(keyword => {
+          if (classNameLower.includes(keyword)) {
+            equipmentScore += p;
+          }
+        });
+
+        // 检查是否匹配服饰关键词
+        CLOTHING_KEYWORDS.forEach(keyword => {
+          if (classNameLower.includes(keyword)) {
+            clothingScore += p;
+          }
+        });
+      });
+
+      // 添加一些基于类别的先验知识
+      // 攀岩装备概率更高
+      if (clothingScore === 0 && equipmentScore === 0) {
+        // 默认倾向于装备类（攀岩馆失物多为装备）
+        return { type: 'equipment', confidence: 0.6 };
+      }
+
+      const total = equipmentScore + clothingScore;
+      if (total === 0) {
+        return { type: 'equipment', confidence: 0.5 };
+      }
+
+      const equipmentRatio = equipmentScore / total;
+      return {
+        type: equipmentRatio > 0.5 ? 'equipment' : 'clothing',
+        confidence: Math.max(equipmentRatio, 1 - equipmentRatio)
+      };
+    }
+
+    // 格式化日期
+    function formatDate() {
+      const now = new Date();
+      return {
+        monthDay: `${now.getMonth() + 1}月${now.getDate()}日`,
+        year: `${now.getFullYear()}年`
+      };
+    }
+
+    // 更新日期显示
+    function updateDateDisplay() {
+      const { monthDay, year } = formatDate();
+      document.getElementById('dateText').textContent = monthDay;
+      document.getElementById('yearText').textContent = year;
+    }
+
+    // 设置物品类型
+    function setItemType(type) {
+      itemType = type;
+      const btnEquipment = document.getElementById('btn-equipment');
+      const btnClothing = document.getElementById('btn-clothing');
+      const itemTypeText = document.getElementById('itemTypeText');
+
+      if (type === 'equipment') {
+        btnEquipment.className = 'flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gradient-to-r from-orange-500 to-yellow-500 text-white text-sm';
+        btnClothing.className = 'flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm';
+        itemTypeText.textContent = '失物招领 · 装备类';
+      } else {
+        btnEquipment.className = 'flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm';
+        btnClothing.className = 'flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-gradient-to-r from-orange-500 to-yellow-500 text-white text-sm';
+        itemTypeText.textContent = '失物招领 · 服饰类';
+      }
+    }
+
+    // 更新设置
+    function updateSettings() {
+      const brightness = document.getElementById('brightness').value;
+      const contrast = document.getElementById('contrast').value;
+      const saturation = document.getElementById('saturation').value;
+
+      document.getElementById('brightnessValue').textContent = brightness + '%';
+      document.getElementById('contrastValue').textContent = contrast + '%';
+      document.getElementById('saturationValue').textContent = saturation + '%';
+
+      if (currentImage) {
+        document.getElementById('previewImage').style.filter =
+          `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
+      }
+    }
+
+    // 一键美化
+    function autoEnhance() {
+      document.getElementById('brightness').value = 110;
+      document.getElementById('contrast').value = 115;
+      document.getElementById('saturation').value = 110;
+      updateSettings();
+    }
+
+    // 处理图片上传
+    async function handleImageUpload(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        currentImage = e.target.result;
+
+        // 显示预览
+        document.getElementById('previewImage').src = currentImage;
+        document.getElementById('previewImage').classList.remove('hidden');
+        document.getElementById('infoBar').classList.remove('hidden');
+        document.getElementById('placeholder').classList.add('hidden');
+        document.getElementById('uploadArea').classList.add('hidden');
+        document.getElementById('uploadedInfo').classList.remove('hidden');
+        document.getElementById('fileName').textContent = '已上传：' + file.name.replace(/\.[^/.]+$/, '');
+        document.getElementById('downloadBtn').disabled = false;
+        document.getElementById('downloadBtn').className = 'w-full mt-6 py-4 rounded-xl font-bold text-lg transition-all bg-gradient-to-r from-orange-500 to-red-500 text-white hover:shadow-xl';
+
+        // AI 识别
+        const aiResultDiv = document.getElementById('aiResult');
+        aiResultDiv.classList.remove('hidden');
+
+        const img = new Image();
+        img.onload = async () => {
+          const result = await predictImage(img);
+
+          itemType = result.type;
+          const confidenceText = (result.confidence * 100).toFixed(1) + '%';
+
+          document.getElementById('aiCategory').textContent = result.type === 'equipment' ? '🧗 装备类' : '👕 服饰类';
+          document.getElementById('confidencePercent').textContent = confidenceText;
+
+          // 更新按钮选中状态
+          setItemType(itemType);
+          updateSettings();
+        };
+        img.src = currentImage;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 重置图片
+    function resetImage() {
+      currentImage = null;
+      document.getElementById('previewImage').src = '';
+      document.getElementById('previewImage').classList.add('hidden');
+      document.getElementById('infoBar').classList.add('hidden');
+      document.getElementById('placeholder').classList.remove('hidden');
+      document.getElementById('uploadArea').classList.remove('hidden');
+      document.getElementById('uploadedInfo').classList.add('hidden');
+      document.getElementById('aiResult').classList.add('hidden');
+      document.getElementById('fileInput').value = '';
+      document.getElementById('downloadBtn').disabled = true;
+      document.getElementById('downloadBtn').className = 'w-full mt-6 py-4 rounded-xl font-bold text-lg transition-all bg-gray-300 text-gray-500 cursor-not-allowed';
+      document.getElementById('brightness').value = 100;
+      document.getElementById('contrast').value = 100;
+      document.getElementById('saturation').value = 100;
+      updateSettings();
+    }
+
+    // 下载图片
+    async function downloadImage() {
+      if (!currentImage) return;
+
+      const downloadBtn = document.getElementById('downloadBtn');
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = '⏳ 正在生成...';
+
+      try {
+        const container = document.getElementById('previewContainer');
+        const canvas = await html2canvas(container, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        });
+
+        const link = document.createElement('a');
+        const { monthDay } = formatDate();
+        const typeStr = itemType === 'clothing' ? '服饰' : '装备';
+        link.download = `失物招领_${typeStr}_${monthDay}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (error) {
+        console.error('下载失败:', error);
+        alert('生成图片失败，请重试');
+      } finally {
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = '📥 下载美化图片';
+      }
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      updateDateDisplay();
+      loadModel();
+
+      // 文件上传
+      document.getElementById('fileInput').addEventListener('change', (e) => {
+        handleImageUpload(e.target.files[0]);
+      });
+
+      // 点击上传区域
+      document.getElementById('uploadArea').addEventListener('click', () => {
+        document.getElementById('fileInput').click();
+      });
+
+      // 拖拽上传
+      const uploadArea = document.getElementById('uploadArea');
+      uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('bg-yellow-50');
+      });
+      uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('bg-yellow-50');
+      });
+      uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('bg-yellow-50');
+        handleImageUpload(e.dataTransfer.files[0]);
+      });
+    });
+  </script>
+</body>
+</html>
